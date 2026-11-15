@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorebug FINAL</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Arial,sans-serif;background:#16181d;color:#eee}
+body.ov{background:transparent;overflow:hidden}
+#ctl{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;padding:12px;height:100vh}
+#left{min-width:0}
+#pv{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:8px;
+ background:repeating-conic-gradient(#2a2d34 0 25%,#22252b 0 50%) 0 0/24px 24px}
+body.ov #pv{position:fixed;inset:0;width:auto;aspect-ratio:auto;background:none;border-radius:0}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;transition:opacity .3s}
+#stage .el{position:absolute;white-space:nowrap;transform:translate(-50%,-50%);font-weight:800;line-height:1;cursor:move;touch-action:none}
+body.ov #stage .el{cursor:default}
+#stage .el.sel{outline:2px dashed #4da3ff;outline-offset:6px}
+#bg{position:absolute;display:none}
+#ph{position:absolute;display:none;background:rgba(0,0,0,.75);border:2px dashed #888;border-radius:12px}
+.dot{display:inline-block;width:.5em;height:.5em;border-radius:50%;margin:0 .12em;background:currentColor}
+.dot.off{opacity:.2}
+#stage .el{z-index:2}
+.L{position:absolute;left:0;top:0;width:1920px;height:1080px;opacity:0;transition:all .5s ease;pointer-events:none;z-index:3}
+.L[data-a=up]{transform:translateY(140px)}.L[data-a=left]{transform:translateX(-400px)}.L[data-a=zoom]{transform:scale(.6)}
+.L.on{opacity:1;transform:none}
+.cd{display:inline-block;width:.55em;height:.75em;border-radius:.1em;margin:0 .1em 0 .35em;vertical-align:-.1em}
+#wipe{position:absolute;left:-2400px;top:0;width:2200px;height:1080px;pointer-events:none;z-index:9;display:flex;align-items:center;justify-content:center;font:800 120px Impact,sans-serif;color:#fff;background:linear-gradient(100deg,#0a0a14 0 40%,#7a2cf0 40% 46%,#2f6fed 46% 52%,#e0344c 52% 58%,#0a0a14 58%)}
+#wipe.go{animation:wp 1.4s cubic-bezier(.7,0,.3,1)}
+@keyframes wp{from{left:-2400px}to{left:2000px}}
+#bn{position:absolute;left:50%;top:60px;z-index:8;transform:translate(-50%,-200px);padding:22px 60px;font:800 44px Impact,sans-serif;color:#fff;background:linear-gradient(90deg,#7a2cf0,#2f6fed,#e0344c);border-radius:6px;transition:transform .5s;white-space:nowrap}
+#bn.on{transform:translate(-50%,0)}
+body.m-so .fa,body.m-fa .so{display:none}
+#pn{overflow:auto;padding-right:4px}
+h3{margin:14px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8ab4ff}
+.card{background:#20232a;border-radius:8px;padding:10px;margin-bottom:8px}
+label{display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0}
+label input[type=range]{flex:1}
+input[type=text],select{width:100%;background:#12141a;color:#eee;border:1px solid #3a3e48;border-radius:6px;padding:8px;font-size:14px}
+button{background:#2f6fed;color:#fff;border:0;border-radius:6px;padding:8px 10px;font-size:14px;margin:2px;cursor:pointer}
+button.g{background:#3a3e48}
+button.r{background:#c23b3b}
+.sc{font-size:34px;font-weight:800;margin:4px 0}
+.row{display:flex;flex-wrap:wrap;align-items:center}
+small{color:#9aa0ab}
+@media(max-width:900px){#ctl{grid-template-columns:1fr;height:auto}}
+</style></head><body>
+<div id="ctl">
+ <div id="left">
+  <div id="pv"><div id="stage"></div></div>
+  <p><small>Arrastra cada elemento en la vista previa para acomodarlo. Lo que ves aquí es lo que sale en el stream (1920×1080).</small></p>
+  <div class="card"><b>Link para Streamlabs (Browser Source)</b>
+   <input type="text" id="ourl" readonly>
+   <button id="cpy">Copiar link</button>
+   <small>Tamaño de la fuente: 1920 × 1080. Deja esta página abierta mientras transmites.</small></div>
+ </div>
+ <div id="pn"></div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const OV=/overlay/.test(location.search);
+const K='sb2_state',ch=new BroadcastChannel('sb2');
+const IDS=['hName','aName','hScore','aScore','qtr','clock','down','hTO','aTO','hCards','aCards'];
+const MODE={fa:IDS.slice(0,9),so:['hName','aName','hScore','aScore','qtr','clock','hCards','aCards']};
+const D={hName:['Nombre local',566,845,40,'#ffffff',0],aName:['Nombre visita',1352,845,40,'#ffffff',0],
+ hScore:['Marcador local',770,845,64,'#ffd84d',1],aScore:['Marcador visita',1150,845,64,'#ffd84d',1],
+ qtr:['Cuarto / tiempo',850,935,30,'#ffffff',1],clock:['Reloj',965,935,34,'#ffffff',1],
+ down:['Down y distancia',1075,935,26,'#ffffff',1],hTO:['Tiempos fuera local',620,935,26,'#ffffff',1],
+ aTO:['Tiempos fuera visita',1280,935,26,'#ffffff',1],hCards:['Tarjetas local',620,935,26,'#ffffff',1],
+ aCards:['Tarjetas visita',1280,935,26,'#ffffff',1]};
+function defs(){const e={};IDS.forEach(i=>e[i]={x:D[i][1],y:D[i][2],s:D[i][3],c:D[i][4],v:D[i][5]});
+ return{ix:0,iy:0,iw:1920,f:'Impact',off:0,mode:'fa',an:'up',au:8,show:{},wn:0,wt:'FUSIÓN STAR',bn:'AVISO',bo:0,h:{n:'LOCAL',p:0,t:3,y:0,r:0},a:{n:'VISITA',p:0,t:3,y:0,r:0},q:'1°',cl:720,run:0,dn:'1st & 10',els:e}}
+let S=defs(),IMG=null,lastImg=null,sel='hScore',sc=1,iv=null,lw=null;
+const SL=['b','t','a'];let IM={};
+const R=(a,b,c,d)=>[a,b,c,b,c,d,a,d];
+const LAY=[['toH','⏱ Time out local','a',R(455,895,789,968)],['flag','🚩 FLAG','a',[789,895,1146,895,1104,968,789,968]],
+['toA','⏱ Time out visita','a',[1146,895,1450,895,1450,968,1104,968]],
+['l1','Jorge Hernández','t',R(120,305,965,468)],['l2','Carlos Pérez','t',R(120,482,955,640)],['l3','Juan López','t',R(120,658,955,815)],
+['l4','Rafa Molina','t',R(1010,305,1860,468)],['l5','Diego García','t',R(1010,482,1855,640)],['l6','Diana Flores','t',R(1010,658,1860,815)],
+['l7','Rafael Paz','t',R(600,845,1295,1062)]];
+const tm={};
+function tog(id){const on=!S.show[id];S.show[id]=on?1:0;
+ if(on&&(id==='toH'||id==='toA')){const t=S[id==='toH'?'h':'a'];t.t=Math.max(0,t.t-1)}
+ clearTimeout(tm[id]);if(on&&S.au>0&&/^(toH|flag|toA)$/.test(id))tm[id]=setTimeout(()=>{S.show[id]=0;save()},S.au*1000);save()}
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const dots=n=>[0,1,2].map(i=>`<span class="dot ${i<n?'':'off'}"></span>`).join('');
+const cards=t=>`<span class="cd" style="background:#ffd84d"></span>${t.y}<span class="cd" style="background:#e0344c"></span>${t.r}`;
+function val(id){return({hName:esc(S.h.n),aName:esc(S.a.n),hScore:S.h.p,aScore:S.a.p,qtr:esc(S.q),
+ clock:fmt(S.cl),down:esc(S.dn),hTO:dots(S.h.t),aTO:dots(S.a.t),hCards:cards(S.h),aCards:cards(S.a)})[id]}
+function load(){try{const j=JSON.parse(localStorage.getItem(K)||'null');if(j){const d=defs();
+ S=Object.assign(d,j);S.els=Object.assign(d.els,j.els||{});IDS.forEach(i=>S.els[i]=Object.assign({},defs().els[i],S.els[i]))}}catch(e){}}
+function loadImg(){SL.forEach(k=>{try{IM[k]=localStorage.getItem('sb2_img_'+k)}catch(e){IM[k]=null}});IMG=IM.b}
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}ch.postMessage('s');upd()}
+const st=$('#stage');
+function build(){st.innerHTML='<img id="bg"><div id="ph"></div>'+LAY.map(l=>`<img class="L" id="L_${l[0]}">`).join('')+'<div id="wipe"></div><div id="bn"></div>';
+ LAY.forEach(l=>{const p=l[3],xs=p.filter((_,i)=>i%2==0),ys=p.filter((_,i)=>i%2),e=$('#L_'+l[0]);let c='polygon(';for(let i=0;i<p.length;i+=2)c+=(i?',':'')+p[i]+'px '+p[i+1]+'px';
+  e.style.clipPath=c+')';e.style.transformOrigin=(Math.min(...xs)+Math.max(...xs))/2+'px '+(Math.min(...ys)+Math.max(...ys))/2+'px'});
+ IDS.forEach(id=>{const e=document.createElement('div');e.className='el';e.id='e_'+id;st.appendChild(e);
+  if(!OV)e.onpointerdown=ev=>drag(ev,id)})}
+function fit(){sc=OV?Math.min(innerWidth/1920,innerHeight/1080):$('#pv').clientWidth/1920;st.style.transform='scale('+sc+')'}
+function upd(){
+ const bg=$('#bg'),ph=$('#ph');
+ if(IMG!==lastImg){lastImg=IMG;if(IMG)bg.src=IMG}
+ bg.style.display=IMG?'block':'none';
+ [bg,ph].forEach(n=>{n.style.left=S.ix+'px';n.style.top=S.iy+'px';n.style.width=S.iw+'px'});
+ ph.style.height=Math.round(S.iw*.17)+'px';ph.style.display=(!IMG&&!OV)?'block':'none';
+ st.style.opacity=S.off?(OV?0:.3):1;
+ document.body.classList.toggle('m-so',S.mode==='so');document.body.classList.toggle('m-fa',S.mode!=='so');
+ LAY.forEach(l=>{const e=$('#L_'+l[0]),im=IM[l[2]];if(e._s!==im){e._s=im;if(im)e.src=im}e.style.display=im?'block':'none';e.dataset.a=S.an;e.classList.toggle('on',!!S.show[l[0]])});
+ const bn=$('#bn');bn.textContent=S.bn;bn.classList.toggle('on',!!S.bo);
+ if(S.wn!==lw){const f=lw===null;lw=S.wn;if(!f){const w=$('#wipe');w.textContent=S.wt;w.classList.remove('go');void w.offsetWidth;w.classList.add('go')}}
+ IDS.forEach(id=>{const e=$('#e_'+id),c=S.els[id];
+  e.style.left=c.x+'px';e.style.top=c.y+'px';e.style.fontSize=c.s+'px';e.style.color=c.c;e.style.fontFamily=S.f+',sans-serif';
+  e.style.display=(MODE[S.mode].includes(id)&&(c.v||!OV))?'block':'none';e.style.opacity=c.v?1:.25;e.innerHTML=val(id);
+  e.classList.toggle('sel',!OV&&id===sel)});
+ if(!OV)ref()}
+function drag(ev,id){ev.preventDefault();sel=id;const c=S.els[id],sx=ev.clientX,sy=ev.clientY,ox=c.x,oy=c.y;
+ const mv=e=>{c.x=Math.round(ox+(e.clientX-sx)/sc);c.y=Math.round(oy+(e.clientY-sy)/sc);save()};
+ const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};
+ addEventListener('pointermove',mv);addEventListener('pointerup',up);save()}
+function parseT(t){t=String(t).trim();if(t.includes(':')){const[a,b]=t.split(':');return Math.max(0,(+a||0)*60+(+b||0))}return Math.max(0,+t||0)}
+function team(k,t){return `<div class="card"><b>${t}</b>
+ <input type="text" id="n_${k}"><div class="sc" id="s_${k}">0</div>
+ <div class="row">${[-1,1,2,3,6].map(p=>`<button data-k="${k}" data-p="${p}" class="${p<0?'g':p>1?'fa':''}">${p>0?'+':'−'}${Math.abs(p)}</button>`).join('')}</div>
+ <div class="row fa">Tiempos fuera: <button class="g" data-k="${k}" data-t="-1">−</button><b id="t_${k}"></b><button class="g" data-k="${k}" data-t="1">+</button></div><div class="row so">Tarjetas: <button class="g" data-k="${k}" data-y="1">🟨+</button><button class="g" data-k="${k}" data-y="-1">🟨−</button><button class="g" data-k="${k}" data-r="1">🟥+</button><button class="g" data-k="${k}" data-r="-1">🟥−</button></div></div>`}
+function initPanel(){
+ $('#ourl').value=location.href.split('?')[0].split('#')[0]+'?overlay';
+ $('#pn').innerHTML=`<h3>Imagen del scorebug</h3><div class="card">
+  Scorebug: <input type="file" data-s="b" accept="image/*"><br>Lower thirds: <input type="file" data-s="t" accept="image/*"><br>Alertas: <input type="file" data-s="a" accept="image/*">
+  <label>X<input type="range" id="ix" min="-500" max="1920"></label>
+  <label>Y<input type="range" id="iy" min="-300" max="1080"></label>
+  <label>Ancho<input type="range" id="iw" min="100" max="1920"></label>
+  <button class="r" id="rm">Quitar imagen</button></div>
+ <h3>Deporte</h3><div class="card"><button data-md="fa">🏈 Americano</button><button data-md="so">⚽ Soccer</button></div>
+ <h3>Marcador</h3>${team('h','Local')}${team('a','Visita')}
+ <h3>Juego</h3><div class="card">
+  <b>Cuarto</b><div class="row">${['1°','2°','3°','4°','OT','1T','2T','ET'].map(q=>`<button class="g" data-q="${q}">${q}</button>`).join('')}</div>
+  <input type="text" id="q">
+  <b>Reloj</b><div class="sc" id="clv"></div>
+  <div class="row"><button id="run"></button><button class="g" data-c="720">12:00</button><button class="g" data-c="600">10:00</button><button class="g" data-c="480">8:00</button><button class="g" data-c="0">0:00</button></div>
+  <input type="text" id="cl" placeholder="mm:ss y Enter">
+  <b>Down y distancia</b><input type="text" id="dn"></div>
+ <h3>Alertas y lower thirds</h3><div class="card"><div class="row">${LAY.map(l=>`<button class="g" data-l="${l[0]}" id="b_${l[0]}">${l[1]}</button>`).join('')}</div>
+  <label>Animación<select id="an">${[['up','Subir'],['left','Deslizar'],['zoom','Zoom'],['fade','Fade']].map(a=>`<option value="${a[0]}">${a[1]}</option>`).join('')}</select></label>
+  <label>Auto-ocultar alertas (s)<input type="text" id="au" style="width:70px"></label><button class="r" id="hl">Ocultar todo</button></div>
+ <h3>Cortinilla y aviso</h3><div class="card"><input type="text" id="wt"><button id="wp">▶ Lanzar cortinilla</button>
+  <input type="text" id="bt"><button id="bb"></button></div>
+ <h3>Elemento seleccionado</h3><div class="card">
+  <select id="es">${IDS.map(i=>`<option value="${i}">${D[i][0]}</option>`).join('')}</select>
+  <label>Tamaño<input type="range" id="esz" min="10" max="200"></label>
+  <label>Color<input type="color" id="ec"></label>
+  <label><input type="checkbox" id="ev"> Mostrar</label>
+  <label>Fuente<select id="fs">${['Impact','Arial Black','Arial','Verdana','Courier New'].map(f=>`<option>${f}</option>`).join('')}</select></label></div>
+ <h3>Transmisión</h3><div class="card"><button id="off"></button> <button class="r" id="rs">Reiniciar todo</button></div>`;
+ const sv=(sel,fn)=>$(sel).addEventListener('input',fn);
+ sv('#ix',e=>{S.ix=+e.target.value;save()});sv('#iy',e=>{S.iy=+e.target.value;save()});sv('#iw',e=>{S.iw=+e.target.value;save()});
+ sv('#n_h',e=>{S.h.n=e.target.value;save()});sv('#n_a',e=>{S.a.n=e.target.value;save()});
+ sv('#q',e=>{S.q=e.target.value;save()});sv('#dn',e=>{S.dn=e.target.value;save()});
+ sv('#es',e=>{sel=e.target.value;upd()});sv('#esz',e=>{S.els[sel].s=+e.target.value;save()});
+ sv('#ec',e=>{S.els[sel].c=e.target.value;save()});sv('#ev',e=>{S.els[sel].v=e.target.checked?1:0;save()});
+ sv('#fs',e=>{S.f=e.target.value;save()});
+ sv('#an',e=>{S.an=e.target.value;save()});sv('#au',e=>{S.au=+e.target.value||0;save()});
+ sv('#wt',e=>{S.wt=e.target.value;save()});sv('#bt',e=>{S.bn=e.target.value;save()});
+ $('#cl').addEventListener('keydown',e=>{if(e.key==='Enter'){S.cl=parseT(e.target.value);e.target.value='';save()}});
+ document.querySelectorAll('input[type=file]').forEach(fi=>fi.addEventListener('change',e=>{const f=e.target.files[0],k=fi.dataset.s;if(!f)return;const r=new FileReader();
+  r.onload=()=>{const im=new Image();im.onload=()=>{if(/svg/.test(f.type)||/\.svg$/i.test(f.name)){try{localStorage.setItem('sb2_img_'+k,r.result)}catch(x){alert('El SVG es muy pesado, prueba con uno más ligero.');return}loadImg();if(k==='b'){S.ix=0;S.iy=0;S.iw=Math.min(im.naturalWidth||1920,1920)}ch.postMessage('i');save();return}const q=Math.min(1,1920/im.width),c=document.createElement('canvas');
+   c.width=Math.round(im.width*q);c.height=Math.round(im.height*q);c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+   try{try{localStorage.setItem('sb2_img_'+k,c.toDataURL('image/png'))}catch(z){localStorage.setItem('sb2_img_'+k,c.toDataURL('image/webp',.95))}}catch(x){alert('La imagen es muy pesada, prueba con una más chica.');return}
+   loadImg();if(k==='b'){S.ix=0;S.iy=0;S.iw=c.width}ch.postMessage('i');save()};im.src=r.result};r.readAsDataURL(f)}));
+ $('#rm').onclick=()=>{SL.forEach(k=>localStorage.removeItem('sb2_img_'+k));loadImg();ch.postMessage('i');save()};
+ $('#cpy').onclick=()=>{$('#ourl').select();navigator.clipboard&&navigator.clipboard.writeText($('#ourl').value);$('#cpy').textContent='¡Copiado!'};
+ $('#run').onclick=()=>{S.run=S.run?0:1;save()};
+ $('#off').onclick=()=>{S.off=S.off?0:1;save()};
+ $('#wp').onclick=()=>{S.wn++;save()};$('#bb').onclick=()=>{S.bo=S.bo?0:1;save()};$('#hl').onclick=()=>{S.show={};save()};
+ $('#rs').onclick=()=>{if(confirm('¿Reiniciar marcador, reloj y posiciones?')){const k=S.f;S=defs();S.f=k;save()}};
+ $('#pn').addEventListener('click',e=>{const b=e.target.closest('button'),d=b&&b.dataset;if(!d)return;
+  if(d.p){S[d.k].p=Math.max(0,S[d.k].p+ +d.p);save()}
+  if(d.t){S[d.k].t=Math.min(3,Math.max(0,S[d.k].t+ +d.t));save()}
+  if(d.q){S.q=d.q;save()}
+  if(d.c!==undefined){S.cl=+d.c;S.run=0;save()}
+  if(d.md){S.mode=d.md;S.run=0;S.cl=d.md==='so'?0:720;S.q=d.md==='so'?'1T':'1°';save()}
+  if(d.y){S[d.k].y=Math.max(0,S[d.k].y+ +d.y);save()}
+  if(d.r){S[d.k].r=Math.max(0,S[d.k].r+ +d.r);save()}
+  if(d.l)tog(d.l)});
+ clearInterval(iv);iv=setInterval(()=>{if(S.run){if(S.mode==='so')S.cl++;else{if(S.cl>0)S.cl--;if(S.cl<=0)S.run=0}save()}},1000)}
+function ref(){const v=(id,x)=>{const e=$(id);if(e&&e.value!==String(x))e.value=x};
+ v('#ix',S.ix);v('#iy',S.iy);v('#iw',S.iw);v('#n_h',S.h.n);v('#n_a',S.a.n);v('#q',S.q);v('#dn',S.dn);
+ v('#es',sel);v('#esz',S.els[sel].s);v('#ec',S.els[sel].c);v('#fs',S.f);$('#ev').checked=!!S.els[sel].v;
+ $('#s_h').textContent=S.h.p;$('#s_a').textContent=S.a.p;$('#t_h').textContent=' '+S.h.t+' ';$('#t_a').textContent=' '+S.a.t+' ';
+ $('#clv').textContent=fmt(S.cl);$('#run').textContent=S.run?'⏸ Pausar':'▶ Iniciar';
+ $('#off').textContent=S.off?'Mostrar scorebug':'Ocultar scorebug';
+ v('#an',S.an);v('#au',S.au);v('#wt',S.wt);v('#bt',S.bn);LAY.forEach(l=>$('#b_'+l[0]).className=S.show[l[0]]?'':'g');$('#bb').textContent=S.bo?'Ocultar aviso':'Mostrar aviso'}
+load();loadImg();build();
+if(OV){document.body.className='ov';document.body.appendChild($('#pv'));$('#ctl').style.display='none'}else initPanel();
+fit();upd();addEventListener('resize',fit);
+ch.onmessage=m=>{if(m.data==='i')loadImg();load();upd()};
+addEventListener('storage',e=>{if((e.key||'').startsWith('sb2')){loadImg();load();upd()}});
+</script></body></html>
