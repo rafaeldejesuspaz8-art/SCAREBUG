@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Scorebug FINAL</title>
+<title>Scorebug</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,Arial,sans-serif;background:#16181d;color:#eee}
@@ -48,7 +48,10 @@ small{color:#9aa0ab}
  <div id="left">
   <div id="pv"><div id="stage"></div></div>
   <p><small>Arrastra cada elemento en la vista previa para acomodarlo. Lo que ves aquí es lo que sale en el stream (1920×1080).</small></p>
-  <div class="card"><b>Link para Streamlabs (Browser Source)</b>
+  <div class="card"><b>Código de sala</b> <small>(para usar Streamlabs en el celular)</small>
+   <input type="text" id="room" placeholder="ej. FRAILES26-X7K2"><button id="rb">Activar</button>
+   <small id="rst"></small><br>
+   <b>Link para Streamlabs (Browser Source)</b>
    <input type="text" id="ourl" readonly>
    <button id="cpy">Copiar link</button>
    <small>Tamaño de la fuente: 1920 × 1080. Deja esta página abierta mientras transmites.</small></div>
@@ -59,6 +62,9 @@ small{color:#9aa0ab}
 const $=s=>document.querySelector(s);
 const OV=/overlay/.test(location.search);
 const K='sb2_state',ch=new BroadcastChannel('sb2');
+const DB='https://scorebu-fs-default-rtdb.firebaseio.com';
+const ROOM=(new URLSearchParams(location.search).get('room')||'').replace(/[^A-Za-z0-9_-]/g,'');
+const RU=k=>DB+'/rooms/'+ROOM+'/'+k+'.json';
 const IDS=['hName','aName','hScore','aScore','qtr','clock','down','hTO','aTO','hCards','aCards'];
 const MODE={fa:IDS.slice(0,9),so:['hName','aName','hScore','aScore','qtr','clock','hCards','aCards']};
 const D={hName:['Nombre local',566,845,40,'#ffffff',0],aName:['Nombre visita',1352,845,40,'#ffffff',0],
@@ -90,7 +96,23 @@ function val(id){return({hName:esc(S.h.n),aName:esc(S.a.n),hScore:S.h.p,aScore:S
 function load(){try{const j=JSON.parse(localStorage.getItem(K)||'null');if(j){const d=defs();
  S=Object.assign(d,j);S.els=Object.assign(d.els,j.els||{});IDS.forEach(i=>S.els[i]=Object.assign({},defs().els[i],S.els[i]))}}catch(e){}}
 function loadImg(){SL.forEach(k=>{try{IM[k]=localStorage.getItem('sb2_img_'+k)}catch(e){IM[k]=null}});IMG=IM.b}
-function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}ch.postMessage('s');upd()}
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}ch.postMessage('s');upd();push()}
+/* Sincronizacion por internet (solo si hay ?room=CODIGO). Sin sala todo funciona como antes. */
+let _pt=null,_pd=false,firstR=true;
+function rput(k,v){if(!ROOM)return;fetch(RU(k),{method:'PUT',body:JSON.stringify(v)}).catch(()=>{})}
+function push(){if(!ROOM||OV)return;if(_pt){_pd=true;return}rput('s',JSON.stringify(S));_pt=setTimeout(()=>{_pt=null;if(_pd){_pd=false;push()}},120)}
+function pushImg(k){if(!ROOM)return;let v=null;try{v=localStorage.getItem('sb2_img_'+k)}catch(e){}rput('i'+k,v)}
+function applyRemote(k,v){
+ if(k==='s'){if(typeof v==='string'){try{const j=JSON.parse(v),d=defs();S=Object.assign(d,j);S.els=Object.assign(d.els,j.els||{});
+  IDS.forEach(i=>S.els[i]=Object.assign({},defs().els[i],S.els[i]));if(firstR){firstR=false;lw=S.wn}}catch(e){}}}
+ else if(/^i[bta]$/.test(k)){IM[k[1]]=v||null;IMG=IM.b}}
+function listen(){
+ if(!ROOM)return;
+ if(window.EventSource){const es=new EventSource(DB+'/rooms/'+ROOM+'.json');
+  es.addEventListener('put',e=>{try{const m=JSON.parse(e.data);
+   if(m.path==='/'){const o=m.data||{};['s','ib','it','ia'].forEach(k=>applyRemote(k,o[k]))}else applyRemote(m.path.slice(1),m.data);upd()}catch(x){}})}
+ else{const g=k=>fetch(RU(k)).then(r=>r.json()).then(v=>{applyRemote(k,v);upd()}).catch(()=>{});
+  ['ib','it','ia'].forEach(g);g('s');setInterval(()=>g('s'),1500)}}
 const st=$('#stage');
 function build(){st.innerHTML='<img id="bg"><div id="ph"></div>'+LAY.map(l=>`<img class="L" id="L_${l[0]}">`).join('')+'<div id="wipe"></div><div id="bn"></div>';
  LAY.forEach(l=>{const p=l[3],xs=p.filter((_,i)=>i%2==0),ys=p.filter((_,i)=>i%2),e=$('#L_'+l[0]);let c='polygon(';for(let i=0;i<p.length;i+=2)c+=(i?',':'')+p[i]+'px '+p[i+1]+'px';
@@ -124,7 +146,9 @@ function team(k,t){return `<div class="card"><b>${t}</b>
  <div class="row">${[-1,1,2,3,6].map(p=>`<button data-k="${k}" data-p="${p}" class="${p<0?'g':p>1?'fa':''}">${p>0?'+':'−'}${Math.abs(p)}</button>`).join('')}</div>
  <div class="row fa">Tiempos fuera: <button class="g" data-k="${k}" data-t="-1">−</button><b id="t_${k}"></b><button class="g" data-k="${k}" data-t="1">+</button></div><div class="row so">Tarjetas: <button class="g" data-k="${k}" data-y="1">🟨+</button><button class="g" data-k="${k}" data-y="-1">🟨−</button><button class="g" data-k="${k}" data-r="1">🟥+</button><button class="g" data-k="${k}" data-r="-1">🟥−</button></div></div>`}
 function initPanel(){
- $('#ourl').value=location.href.split('?')[0].split('#')[0]+'?overlay';
+ $('#ourl').value=location.href.split('?')[0].split('#')[0]+'?overlay'+(ROOM?'&room='+ROOM:'');
+ $('#room').value=ROOM;$('#rst').textContent=ROOM?'Sincronización activa con la sala '+ROOM+'. Usa este mismo código en el link del overlay.':'Sin sala: solo funciona dentro de este mismo navegador.';
+ $('#rb').onclick=()=>{const c=$('#room').value.replace(/[^A-Za-z0-9_-]/g,'');if(c&&c.length<8){alert('Usa un código de al menos 8 caracteres (letras y números) para que nadie lo adivine.');return}location.search=c?'?room='+c:''};
  $('#pn').innerHTML=`<h3>Imagen del scorebug</h3><div class="card">
   Scorebug: <input type="file" data-s="b" accept="image/*"><br>Lower thirds: <input type="file" data-s="t" accept="image/*"><br>Alertas: <input type="file" data-s="a" accept="image/*">
   <label>X<input type="range" id="ix" min="-500" max="1920"></label>
@@ -163,11 +187,11 @@ function initPanel(){
  sv('#wt',e=>{S.wt=e.target.value;save()});sv('#bt',e=>{S.bn=e.target.value;save()});
  $('#cl').addEventListener('keydown',e=>{if(e.key==='Enter'){S.cl=parseT(e.target.value);e.target.value='';save()}});
  document.querySelectorAll('input[type=file]').forEach(fi=>fi.addEventListener('change',e=>{const f=e.target.files[0],k=fi.dataset.s;if(!f)return;const r=new FileReader();
-  r.onload=()=>{const im=new Image();im.onload=()=>{if(/svg/.test(f.type)||/\.svg$/i.test(f.name)){try{localStorage.setItem('sb2_img_'+k,r.result)}catch(x){alert('El SVG es muy pesado, prueba con uno más ligero.');return}loadImg();if(k==='b'){S.ix=0;S.iy=0;S.iw=Math.min(im.naturalWidth||1920,1920)}ch.postMessage('i');save();return}const q=Math.min(1,1920/im.width),c=document.createElement('canvas');
+  r.onload=()=>{const im=new Image();im.onload=()=>{if(/svg/.test(f.type)||/\.svg$/i.test(f.name)){try{localStorage.setItem('sb2_img_'+k,r.result)}catch(x){alert('El SVG es muy pesado, prueba con uno más ligero.');return}loadImg();pushImg(k);if(k==='b'){S.ix=0;S.iy=0;S.iw=Math.min(im.naturalWidth||1920,1920)}ch.postMessage('i');save();return}const q=Math.min(1,1920/im.width),c=document.createElement('canvas');
    c.width=Math.round(im.width*q);c.height=Math.round(im.height*q);c.getContext('2d').drawImage(im,0,0,c.width,c.height);
    try{try{localStorage.setItem('sb2_img_'+k,c.toDataURL('image/png'))}catch(z){localStorage.setItem('sb2_img_'+k,c.toDataURL('image/webp',.95))}}catch(x){alert('La imagen es muy pesada, prueba con una más chica.');return}
-   loadImg();if(k==='b'){S.ix=0;S.iy=0;S.iw=c.width}ch.postMessage('i');save()};im.src=r.result};r.readAsDataURL(f)}));
- $('#rm').onclick=()=>{SL.forEach(k=>localStorage.removeItem('sb2_img_'+k));loadImg();ch.postMessage('i');save()};
+   loadImg();pushImg(k);if(k==='b'){S.ix=0;S.iy=0;S.iw=c.width}ch.postMessage('i');save()};im.src=r.result};r.readAsDataURL(f)}));
+ $('#rm').onclick=()=>{SL.forEach(k=>localStorage.removeItem('sb2_img_'+k));loadImg();SL.forEach(pushImg);ch.postMessage('i');save()};
  $('#cpy').onclick=()=>{$('#ourl').select();navigator.clipboard&&navigator.clipboard.writeText($('#ourl').value);$('#cpy').textContent='¡Copiado!'};
  $('#run').onclick=()=>{S.run=S.run?0:1;save()};
  $('#off').onclick=()=>{S.off=S.off?0:1;save()};
@@ -193,6 +217,7 @@ function ref(){const v=(id,x)=>{const e=$(id);if(e&&e.value!==String(x))e.value=
 load();loadImg();build();
 if(OV){document.body.className='ov';document.body.appendChild($('#pv'));$('#ctl').style.display='none'}else initPanel();
 fit();upd();addEventListener('resize',fit);
-ch.onmessage=m=>{if(m.data==='i')loadImg();load();upd()};
-addEventListener('storage',e=>{if((e.key||'').startsWith('sb2')){loadImg();load();upd()}});
+if(!(OV&&ROOM)){ch.onmessage=m=>{if(m.data==='i')loadImg();load();upd()};
+addEventListener('storage',e=>{if((e.key||'').startsWith('sb2')){loadImg();load();upd()}})}
+listen();if(ROOM&&!OV){push();SL.forEach(pushImg)}
 </script></body></html>
